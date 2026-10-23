@@ -1,0 +1,40 @@
+name: kgka_music_hl
+description: "the best music application"
+publish_to: 'none'
+version: 3.1.0
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  audio_service: ^0.18.18
+  audio_session: ^0.2.4
+  audio_metadata_reader: ^1.8.0
+  charset: ^2.0.1
+  crypto: ^3.0.3
+  http: ^1.5.0
+  just_audio: ^0.10.4
+  just_audio_windows: ^0.2.3
+  shared_preferences: ^2.5.3
+  url_launcher: ^6.3.2
+  dio: ^5.7.0
+  path_provider: ^2.1.5
+  image_picker: ^1.1.2
+  file_picker: ^12.0.0
+  flutter_lyric: ^3.0.7
+  permission_handler: ^13.0.1
+  lpinyin: ^2.0.3
+  liquid_glass_easy: ^4.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - update.md
+    - lib/assets/logo.png
