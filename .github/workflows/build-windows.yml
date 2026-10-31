@@ -41,7 +41,9 @@ concurrency:
 jobs:
   build-windows:
     name: flutter build windows (x64)
-    runs-on: windows-latest
+    # 固定 windows-2022 (VS 2022)：windows-latest 已升级到 VS 18 / MSVC 14.51，
+    # 其 STL 将 <experimental/coroutine> 升级为硬错误（STL1011），旧插件无法编译。
+    runs-on: windows-2022
     timeout-minutes: 50
 
     env:
@@ -50,6 +52,9 @@ jobs:
       # 输出目录（Flutter Windows 固定为 x64）
       OUTPUT_DIR: build/windows/x64/runner/Release
       ZIP_NAME: kgka_music_hl_windows_x64
+      # MSVC cl.exe 自动读取 CL 环境变量作为附加编译选项。
+      # 注入该宏以抑制 STL1011 硬错误（just_audio_windows / permission_handler 等旧插件依赖 experimental/coroutine）。
+      CL: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
 
     steps:
       - name: Checkout repository
