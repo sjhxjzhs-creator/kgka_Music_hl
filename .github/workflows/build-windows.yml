@@ -1,0 +1,138 @@
+name: Build Windows x64 Release
+
+# kgka_Music_hl (KA Music) — Windows x64 自动构建工作流
+# 用法：
+#   1) Fork 本仓库，把本文件放到 .github/workflows/ 下并 push
+#   2) 到 Actions 页手动触发 "Build Windows x64 Release"（workflow_dispatch）
+#      或推送任意 tag（如 v3.3.0）自动触发并发布 Release
+#   3) 构建完成后在 Artifacts 中下载 kgka_music_hl_windows_x64.zip
+#      （含 kgka_music_hl.exe + 全部依赖 DLL + data，解压即可运行）
+#
+# 说明：
+#   - Flutter Windows 桌面端仅支持 x64，无法生成 x86 (32位) 版本
+#   - 必须在 Windows 主机上编译（本工作流使用 GitHub 托管的 windows-latest）
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: '可选：自定义 API 地址（KA_MUSIC_API_BASE_URL）'
+        required: false
+        default: 'https://music.api.hoilai.cn'
+      build_mode:
+        description: '构建模式'
+        required: false
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - profile
+
+permissions:
+  contents: write   # 需要写权限才能在打 tag 时创建 Release 并上传资产
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: flutter build windows (x64)
+    runs-on: windows-latest
+    timeout-minutes: 50
+
+    env:
+      # 与项目现有 CI 保持一致：stable 通道
+      FLUTTER_CHANNEL: stable
+      # 输出目录（Flutter Windows 固定为 x64）
+      OUTPUT_DIR: build/windows/x64/runner/Release
+      ZIP_NAME: kgka_music_hl_windows_x64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          submodules: recursive
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Disable analytics & enable windows desktop
+        run: |
+          flutter config --no-analytics
+          flutter config --enable-windows-desktop
+          flutter doctor -v
+
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.LOCALAPPDATA }}\Pub\Cache
+          key: pub-windows-${{ hashFiles('pubspec.lock') }}
+          restore-keys: |
+            pub-windows-
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Resolve build parameters
+        id: params
+        shell: bash
+        run: |
+          MODE="${{ github.event.inputs.build_mode }}"
+          API="${{ github.event.inputs.api_base_url }}"
+          if [ -z "$MODE" ]; then MODE="release"; fi
+          if [ -z "$API" ]; then API="https://music.api.hoilai.cn"; fi
+          # 从 pubspec.yaml 读取 version 作为包名后缀
+          VER=$(grep -E '^version:' pubspec.yaml | head -1 | awk '{print $2}' | cut -d'+' -f1)
+          if [ -z "$VER" ]; then VER="latest"; fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "api=$API" >> "$GITHUB_OUTPUT"
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+          echo "zip=${ZIP_NAME}_v${VER}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Build Windows ${{ steps.params.outputs.mode }} (x64)
+        run: |
+          flutter build windows --${{ steps.params.outputs.mode }} `
+            --dart-define=KA_MUSIC_API_BASE_URL="${{ steps.params.outputs.api }}"
+
+      - name: List build output
+        shell: bash
+        run: |
+          ls -lh "$OUTPUT_DIR"
+          echo "---"
+          du -sh "$OUTPUT_DIR"
+
+      - name: Package release folder into zip
+        shell: pwsh
+        run: |
+          $zipPath = Join-Path $env:RUNNER_TEMP "${{ steps.params.outputs.zip }}"
+          Compress-Archive -Path "${{ env.OUTPUT_DIR }}\*" -DestinationPath $zipPath -Force
+          Get-Item $zipPath | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,2)}}
+          echo "ZIP_PATH=$zipPath" >> $env:GITHUB_ENV
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_PATH }}
+          if-no-files-found: error
+          retention-days: 30
+
+      # 仅在推送 tag 时创建 GitHub Release 并上传 zip
+      - name: Create Release & upload asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: KA Music ${{ github.ref_name }} (Windows x64)
+          files: ${{ env.ZIP_PATH }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
